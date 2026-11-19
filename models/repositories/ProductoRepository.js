@@ -9,7 +9,7 @@ import Producto from '../entities/Producto.js';
 class ProductoRepository {
   constructor() {
     this.db = Database.getInstance();
-    tis.prisma = hthis.db.client;
+    this.prisma = this.db.client;
   }
 
   /**
@@ -63,8 +63,8 @@ class ProductoRepository {
         nombre,
         descripcion,
         urlimagen,
-        pvp: parseFloat(pvp),
-        stock: parseInt(stock, 10),
+        pvp: Number(pvp),
+        stock: Number(stock),
       },
     });
 
@@ -82,8 +82,8 @@ class ProductoRepository {
           nombre,
           descripcion,
           urlimagen,
-          pvp: parseFloat(pvp),
-          stock: parseInt(stock, 10),
+          pvp: Number(pvp),
+          stock: Number(stock),
         },
       });
 
@@ -106,8 +106,8 @@ class ProductoRepository {
       if (fields.nombre !== undefined) data.nombre = fields.nombre;
       if (fields.descripcion !== undefined) data.descripcion = fields.descripcion;
       if (fields.urlimagen !== undefined) data.urlimagen = fields.urlimagen;
-      if (fields.pvp !== undefined) data.pvp = parseFloat(fields.pvp);
-      if (fields.stock !== undefined) data.stock = parseInt(fields.stock, 10);
+      if (fields.pvp !== undefined) data.pvp = Number(fields.pvp);
+      if (fields.stock !== undefined) data.stock = Number(fields.stock);
 
       const row = await this.prisma.producto.update({
         where: { id: parseInt(id, 10) },

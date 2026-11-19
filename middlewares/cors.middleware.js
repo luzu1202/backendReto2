@@ -17,7 +17,7 @@ const corsOptions = {
     // Permitir peticiones sin origen (como Postman, cURL o apps móviles)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
@@ -27,7 +27,6 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  credentials: true,
   maxAge: 86400, // Cache de preflight por 24 horas
 };
 

@@ -22,8 +22,34 @@ export const validateIdParam = (req, res, next) => {
   next();
 };
 
+const isHttpUrl = (value) => {
+  if (typeof value !== 'string') return false;
+
+  try {
+    const url = new URL(value.trim());
+    return ['http:', 'https:'].includes(url.protocol) && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const isNumericInput = (value) => (
+  (typeof value === 'number' && Number.isFinite(value))
+  || (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)))
+);
+
 // Valida los datos para crear un nuevo producto (POST)
 export const validateCreateProducto = (req, res, next) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(422).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'El cuerpo de la solicitud debe ser un objeto JSON.',
+      },
+    });
+  }
+
   const { nombre, descripcion, urlimagen, pvp, stock } = req.body;
   const errors = [];
 
@@ -35,17 +61,17 @@ export const validateCreateProducto = (req, res, next) => {
     errors.push("El campo 'descripcion' es obligatorio y debe tener al menos 10 caracteres.");
   }
 
-  if (!urlimagen || typeof urlimagen !== 'string' || !urlimagen.trim().startsWith('http')) {
+  if (!isHttpUrl(urlimagen)) {
     errors.push("El campo 'urlimagen' es obligatorio y debe ser una URL válida que empiece por http/https.");
   }
 
-  const numericPvp = parseFloat(pvp);
-  if (pvp === undefined || isNaN(numericPvp) || numericPvp <= 0) {
+  const numericPvp = Number(pvp);
+  if (!isNumericInput(pvp) || numericPvp <= 0) {
     errors.push("El campo 'pvp' (Precio de Venta al Público) es obligatorio y debe ser un número mayor a 0.");
   }
 
-  const numericStock = parseInt(stock, 10);
-  if (stock === undefined || !Number.isInteger(numericStock) || numericStock < 0) {
+  const numericStock = Number(stock);
+  if (!isNumericInput(stock) || !Number.isInteger(numericStock) || numericStock < 0) {
     errors.push("El campo 'stock' es obligatorio y debe ser un número entero mayor o igual a 0.");
   }
 
@@ -71,6 +97,16 @@ export const validateUpdateProducto = (req, res, next) => {
 
 // Valida actualización parcial (PATCH)
 export const validatePatchProducto = (req, res, next) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(422).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'El cuerpo de la solicitud debe ser un objeto JSON.',
+      },
+    });
+  }
+
   const { nombre, descripcion, urlimagen, pvp, stock } = req.body;
   const errors = [];
 
@@ -85,6 +121,11 @@ export const validatePatchProducto = (req, res, next) => {
     });
   }
 
+  const validFields = new Set(['nombre', 'descripcion', 'urlimagen', 'pvp', 'stock']);
+  if (fieldsProvided.some((field) => !validFields.has(field))) {
+    errors.push('La solicitud contiene campos que no se pueden actualizar.');
+  }
+
   if (nombre !== undefined && (typeof nombre !== 'string' || nombre.trim().length < 3)) {
     errors.push("El campo 'nombre' debe tener al menos 3 caracteres.");
   }
@@ -93,20 +134,20 @@ export const validatePatchProducto = (req, res, next) => {
     errors.push("El campo 'descripcion' debe tener al menos 10 caracteres.");
   }
 
-  if (urlimagen !== undefined && (typeof urlimagen !== 'string' || !urlimagen.trim().startsWith('http'))) {
+  if (urlimagen !== undefined && !isHttpUrl(urlimagen)) {
     errors.push("El campo 'urlimagen' debe ser una URL válida.");
   }
 
   if (pvp !== undefined) {
-    const numericPvp = parseFloat(pvp);
-    if (isNaN(numericPvp) || numericPvp <= 0) {
+    const numericPvp = Number(pvp);
+    if (!isNumericInput(pvp) || numericPvp <= 0) {
       errors.push("El campo 'pvp' debe ser un número mayor a 0.");
     }
   }
 
   if (stock !== undefined) {
-    const numericStock = parseInt(stock, 10);
-    if (!Number.isInteger(numericStock) || numericStock < 0) {
+    const numericStock = Number(stock);
+    if (!isNumericInput(stock) || !Number.isInteger(numericStock) || numericStock < 0) {
       errors.push("El campo 'stock' debe ser un número entero mayor o igual a 0.");
     }
   }
