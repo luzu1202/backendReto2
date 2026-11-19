@@ -2,6 +2,7 @@ import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { once } from 'node:events';
+import Database from './models/database/Database.js';
 import apiRouter from './routes/index.js';
 import {
   validateCreateProducto,
@@ -24,6 +25,9 @@ before(async () => {
 after(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
+  }
+  if (process.env.TEST_DATABASE_URL) {
+    await Database.getInstance().close();
   }
 });
 
@@ -130,4 +134,78 @@ test('product API rejects a non-object create payload', async () => {
 
   assert.equal(response.status, 422);
   assert.equal(body.error.code, 'VALIDATION_FAILED');
+});
+
+test('product API supports create, read, update, patch, search, and delete', {
+  skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+  const suffix = Date.now();
+  const originalName = `API test ${suffix}`;
+  let productId;
+
+  try {
+    const createResponse = await fetch(`${apiBaseUrl}/productos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre: originalName,
+        descripcion: 'Producto temporal para pruebas de API',
+        urlimagen: 'https://example.com/api-test.png',
+        pvp: 12.5,
+        stock: 2,
+      }),
+    });
+    const created = await createResponse.json();
+    assert.equal(createResponse.status, 201);
+    productId = created.data.id;
+
+    const byIdResponse = await fetch(`${apiBaseUrl}/productos/${productId}`);
+    const byId = await byIdResponse.json();
+    assert.equal(byIdResponse.status, 200);
+    assert.equal(byId.data.nombre, originalName);
+
+    const searchResponse = await fetch(
+      `${apiBaseUrl}/productos?search=${encodeURIComponent(originalName)}`
+    );
+    const searchResult = await searchResponse.json();
+    assert.equal(searchResponse.status, 200);
+    assert.ok(searchResult.data.some((product) => product.id === productId));
+
+    const putResponse = await fetch(`${apiBaseUrl}/productos/${productId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre: `Updated ${originalName}`,
+        descripcion: 'Producto temporal actualizado para pruebas',
+        urlimagen: 'https://example.com/api-test-updated.png',
+        pvp: 14.25,
+        stock: 4,
+      }),
+    });
+    const putResult = await putResponse.json();
+    assert.equal(putResponse.status, 200);
+    assert.equal(putResult.data.stock, 4);
+
+    const patchResponse = await fetch(`${apiBaseUrl}/productos/${productId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stock: 7 }),
+    });
+    const patchResult = await patchResponse.json();
+    assert.equal(patchResponse.status, 200);
+    assert.equal(patchResult.data.stock, 7);
+
+    const deleteResponse = await fetch(`${apiBaseUrl}/productos/${productId}`, {
+      method: 'DELETE',
+    });
+    assert.equal(deleteResponse.status, 204);
+    productId = undefined;
+
+    const missingResponse = await fetch(`${apiBaseUrl}/productos/${created.data.id}`);
+    assert.equal(missingResponse.status, 404);
+  } finally {
+    if (productId) {
+      await fetch(`${apiBaseUrl}/productos/${productId}`, { method: 'DELETE' });
+    }
+  }
 });
