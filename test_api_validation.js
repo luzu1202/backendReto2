@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { once } from 'node:events';
 import Database from './models/database/Database.js';
+import { errorHandlerMiddleware } from './middlewares/errorHandler.middleware.js';
 import apiRouter from './routes/index.js';
 import {
   validateCreateProducto,
@@ -106,6 +107,43 @@ test('patch validation rejects unknown fields', () => {
 
   assert.equal(result.statusCode, 422);
   assert.equal(result.responseBody.error.code, 'VALIDATION_FAILED');
+});
+
+test('error handler hides internal server messages in production', () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const originalConsoleError = console.error;
+  let responseBody;
+
+  process.env.NODE_ENV = 'production';
+  console.error = () => {};
+
+  try {
+    errorHandlerMiddleware(
+      new Error('Database password or connection details'),
+      { method: 'GET', originalUrl: '/api/v1/productos' },
+      {
+        status() {
+          return this;
+        },
+        json(payload) {
+          responseBody = payload;
+          return this;
+        },
+      },
+      () => {},
+    );
+  } finally {
+    console.error = originalConsoleError;
+    if (previousNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  }
+
+  assert.equal(responseBody.error.code, 'INTERNAL_SERVER_ERROR');
+  assert.equal(responseBody.error.message, 'Ha ocurrido un error inesperado en el servidor.');
+  assert.equal(responseBody.error.details, undefined);
 });
 
 test('health endpoint returns an online response', async () => {
