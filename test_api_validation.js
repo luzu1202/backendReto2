@@ -10,6 +10,9 @@ import {
   validatePatchProducto,
 } from './middlewares/validation.middleware.js';
 
+const testApiKey = 'test-api-key-for-backend-tests-32chars';
+process.env.API_WRITE_KEY = testApiKey;
+
 const app = express();
 app.use(express.json());
 app.use('/api/v1', apiRouter);
@@ -162,10 +165,78 @@ test('product API rejects invalid IDs without querying the database', async () =
   assert.equal(body.error.code, 'INVALID_ID_PARAM');
 });
 
+test('all product mutations require a write key', async () => {
+  const mutations = [
+    { method: 'POST', path: '/productos' },
+    { method: 'PUT', path: '/productos/1' },
+    { method: 'PATCH', path: '/productos/1' },
+    { method: 'DELETE', path: '/productos/1' },
+  ];
+
+  for (const { method, path } of mutations) {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: method === 'DELETE' ? undefined : '{}',
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 401, `${method} ${path}`);
+    assert.equal(body.error.code, 'UNAUTHORIZED', `${method} ${path}`);
+    if (method === 'POST') {
+      assert.equal(response.headers.get('www-authenticate'), 'Bearer');
+    }
+  }
+});
+
+test('product API rejects an invalid write key', async () => {
+  const response = await fetch(`${apiBaseUrl}/productos`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer invalid-api-key',
+    },
+    body: '{}',
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.equal(body.error.code, 'UNAUTHORIZED');
+});
+
+test('product API refuses writes when the key is missing or weak', async () => {
+  const previousKey = process.env.API_WRITE_KEY;
+
+  try {
+    for (const key of [undefined, 'weak-key']) {
+      if (key === undefined) {
+        delete process.env.API_WRITE_KEY;
+      } else {
+        process.env.API_WRITE_KEY = key;
+      }
+
+      const response = await fetch(`${apiBaseUrl}/productos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const body = await response.json();
+
+      assert.equal(response.status, 503);
+      assert.equal(body.error.code, 'WRITE_AUTH_NOT_CONFIGURED');
+    }
+  } finally {
+    process.env.API_WRITE_KEY = previousKey;
+  }
+});
+
 test('product API rejects a non-object create payload', async () => {
   const response = await fetch(`${apiBaseUrl}/productos`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${testApiKey}`,
+    },
     body: '[]',
   });
   const body = await response.json();
@@ -184,7 +255,10 @@ test('product API supports create, read, update, patch, search, and delete', {
   try {
     const createResponse = await fetch(`${apiBaseUrl}/productos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${testApiKey}`,
+      },
       body: JSON.stringify({
         nombre: originalName,
         descripcion: 'Producto temporal para pruebas de API',
@@ -211,7 +285,10 @@ test('product API supports create, read, update, patch, search, and delete', {
 
     const putResponse = await fetch(`${apiBaseUrl}/productos/${productId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${testApiKey}`,
+      },
       body: JSON.stringify({
         nombre: `Updated ${originalName}`,
         descripcion: 'Producto temporal actualizado para pruebas',
@@ -226,7 +303,10 @@ test('product API supports create, read, update, patch, search, and delete', {
 
     const patchResponse = await fetch(`${apiBaseUrl}/productos/${productId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${testApiKey}`,
+      },
       body: JSON.stringify({ stock: 7 }),
     });
     const patchResult = await patchResponse.json();
@@ -235,6 +315,7 @@ test('product API supports create, read, update, patch, search, and delete', {
 
     const deleteResponse = await fetch(`${apiBaseUrl}/productos/${productId}`, {
       method: 'DELETE',
+      headers: { Authorization: `Bearer ${testApiKey}` },
     });
     assert.equal(deleteResponse.status, 204);
     productId = undefined;
@@ -243,7 +324,10 @@ test('product API supports create, read, update, patch, search, and delete', {
     assert.equal(missingResponse.status, 404);
   } finally {
     if (productId) {
-      await fetch(`${apiBaseUrl}/productos/${productId}`, { method: 'DELETE' });
+      await fetch(`${apiBaseUrl}/productos/${productId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${testApiKey}` },
+      });
     }
   }
 });

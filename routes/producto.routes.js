@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import ProductoFactory from '../models/factories/ProductoFactory.js';
+import { requireWriteApiKey } from '../middlewares/apiKey.middleware.js';
 import { paginationMiddleware } from '../middlewares/pagination.middleware.js';
 import {
   validateIdParam,
@@ -25,15 +26,15 @@ router.get('/', paginationMiddleware, productoController.getAll);
 router.get('/:id', validateIdParam, productoController.getById);
 
 // POST /api/v1/productos (Creación)
-router.post('/', validateCreateProducto, productoController.create);
+router.post('/', requireWriteApiKey, validateCreateProducto, productoController.create);
 
 // PUT /api/v1/productos/:id (Reemplazo total)
-router.put('/:id', validateIdParam, validateUpdateProducto, productoController.update);
+router.put('/:id', requireWriteApiKey, validateIdParam, validateUpdateProducto, productoController.update);
 
 // PATCH /api/v1/productos/:id (Actualización parcial)
-router.patch('/:id', validateIdParam, validatePatchProducto, productoController.partialUpdate);
+router.patch('/:id', requireWriteApiKey, validateIdParam, validatePatchProducto, productoController.partialUpdate);
 
 // DELETE /api/v1/productos/:id (Eliminación física)
-router.delete('/:id', validateIdParam, productoController.delete);
+router.delete('/:id', requireWriteApiKey, validateIdParam, productoController.delete);
 
 export default router;
