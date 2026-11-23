@@ -446,7 +446,7 @@ test('product, user, role, and assignment APIs persist safely and support CRUD',
         const assignmentResponse = await fetch(`${apiBaseUrl}/usuarios-roles`, {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usuarioId: userId, rolId }),
+          body: JSON.stringify({ usuarioId: userId, rolId: roleId }),
         });
         const createdAssignment = await assignmentResponse.json();
         assert.equal(assignmentResponse.status, 201);
@@ -457,7 +457,7 @@ test('product, user, role, and assignment APIs persist safely and support CRUD',
         const duplicateAssignmentResponse = await fetch(`${apiBaseUrl}/usuarios-roles`, {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usuarioId: userId, rolId }),
+          body: JSON.stringify({ usuarioId: userId, rolId: roleId }),
         });
         assert.equal(duplicateAssignmentResponse.status, 409);
 
@@ -479,7 +479,7 @@ test('product, user, role, and assignment APIs persist safely and support CRUD',
         const reassignResponse = await fetch(`${apiBaseUrl}/usuarios-roles`, {
           method: 'POST',
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usuarioId: userId, rolId }),
+          body: JSON.stringify({ usuarioId: userId, rolId: roleId }),
         });
         assert.equal(reassignResponse.status, 201);
 
