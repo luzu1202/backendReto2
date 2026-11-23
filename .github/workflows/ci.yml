@@ -53,6 +53,11 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/backend_test?schema=public
 
+      - name: Seed test database
+        run: npm run seed
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/backend_test?schema=public
+
       - name: Validate API behavior
         run: npm test
         env:

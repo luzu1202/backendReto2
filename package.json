@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test test_api_validation.js",
+    "seed": "node scripts/seed-products.js",
     "test:integration": "node test_integration.js"
   },
   "keywords": [
@@ -29,5 +30,8 @@
   },
   "devDependencies": {
     "prisma": "^7.10.1"
+  },
+  "overrides": {
+    "effect": "3.22.1"
   }
 }
