@@ -24,6 +24,7 @@ const app = express();
 app.use(express.json());
 app.use(sanitizeMiddleware);
 app.use('/api/v1', apiRouter);
+app.use(errorHandlerMiddleware);
 
 let server;
 let apiBaseUrl;
