@@ -335,7 +335,7 @@ test('product API rejects a non-object create payload', async () => {
   assert.equal(body.error.code, 'VALIDATION_FAILED');
 });
 
-test('product API supports create, read, update, patch, search, and delete', {
+test('product, user, role, and assignment APIs persist safely and support CRUD', {
   skip: !process.env.TEST_DATABASE_URL,
 }, async () => {
   const suffix = Date.now();
@@ -358,23 +358,17 @@ test('product API supports create, read, update, patch, search, and delete', {
       }),
     });
 
-    test('seed creates the default ADMIN and USUARIO roles', {
-      skip: !process.env.TEST_DATABASE_URL,
-    }, async () => {
-      const roles = await Database.getInstance().client.rol.findMany({
-        where: { nombre: { in: ['ADMIN', 'USUARIO'] } },
-        select: { nombre: true },
-      });
-
-      assert.deepEqual(
-        roles.map(({ nombre }) => nombre).sort(),
-        ['ADMIN', 'USUARIO'],
-      );
+    const seededRoles = await Database.getInstance().client.rol.findMany({
+      where: { nombre: { in: ['ADMIN', 'USUARIO'] } },
+      select: { nombre: true },
     });
 
-    test('user, role, and assignment APIs persist safely and support CRUD', {
-      skip: !process.env.TEST_DATABASE_URL,
-    }, async () => {
+    assert.deepEqual(
+      seededRoles.map(({ nombre }) => nombre).sort(),
+      ['ADMIN', 'USUARIO'],
+    );
+
+    await (async () => {
       const suffix = Date.now();
       const password = `Safe<Password>&${suffix}`;
       const email = `user-${suffix}@example.com`;
@@ -544,7 +538,7 @@ test('product API supports create, read, update, patch, search, and delete', {
           await fetch(`${apiBaseUrl}/roles/${roleId}`, { method: 'DELETE', headers: authHeaders });
         }
       }
-    });
+    })();
     const created = await createResponse.json();
     assert.equal(createResponse.status, 201);
     productId = created.data.id;
