@@ -26,6 +26,26 @@ export const errorHandlerMiddleware = (err, req, res, next) => {
     });
   }
 
+  if (err.code === 'P2002') {
+    return res.status(409).json({
+      success: false,
+      error: {
+        code: 'DUPLICATE_RESOURCE',
+        message: 'Ya existe un recurso con esos datos únicos.',
+      },
+    });
+  }
+
+  if (err.code === 'P2003') {
+    return res.status(409).json({
+      success: false,
+      error: {
+        code: 'RELATED_RECORD_CONFLICT',
+        message: 'La operación entra en conflicto con registros relacionados.',
+      },
+    });
+  }
+
   return res.status(statusCode).json({
     success: false,
     error: {

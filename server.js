@@ -34,6 +34,9 @@ app.get('/', (req, res) => {
     endpoints: {
       health: `/api/${API_VERSION}/health`,
       productos: `/api/${API_VERSION}/productos`,
+      usuarios: `/api/${API_VERSION}/usuarios`,
+      roles: `/api/${API_VERSION}/roles`,
+      usuariosRoles: `/api/${API_VERSION}/usuarios-roles`,
     },
   });
 });

@@ -12,12 +12,48 @@ datasource db {
 
 // Mapeo exacto de la tabla existente 'producto' en PostgreSQL
 model Producto {
-  id          Int      @id @default(autoincrement())
-  nombre      String   @db.VarChar(200)
-  descripcion String   @db.Text
-  urlimagen   String   @db.VarChar(500)
-  pvp         Decimal  @db.Decimal(10, 2)
+  id          Int     @id @default(autoincrement())
+  nombre      String  @db.VarChar(200)
+  descripcion String  @db.Text
+  urlimagen   String  @db.VarChar(500)
+  pvp         Decimal @db.Decimal(10, 2)
   stock       Int
 
   @@map("producto")
+}
+
+model Usuario {
+  id            Int          @id @default(autoincrement())
+  nombre        String       @db.VarChar(120)
+  email         String       @unique @db.VarChar(254)
+  passwordHash  String       @map("password_hash") @db.VarChar(255)
+  activo        Boolean      @default(true)
+  creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn DateTime     @default(now()) @updatedAt @map("actualizado_en") @db.Timestamptz(6)
+  roles         UsuarioRol[]
+
+  @@map("usuario")
+}
+
+model Rol {
+  id            Int          @id @default(autoincrement())
+  nombre        String       @unique @db.VarChar(50)
+  descripcion   String?      @db.VarChar(255)
+  creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(6)
+  actualizadoEn DateTime     @default(now()) @updatedAt @map("actualizado_en") @db.Timestamptz(6)
+  usuarios      UsuarioRol[]
+
+  @@map("rol")
+}
+
+model UsuarioRol {
+  usuarioId  Int      @map("usuario_id")
+  rolId      Int      @map("rol_id")
+  asignadoEn DateTime @default(now()) @map("asignado_en") @db.Timestamptz(6)
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  rol        Rol      @relation(fields: [rolId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([usuarioId, rolId])
+  @@index([rolId])
+  @@map("usuario_rol")
 }

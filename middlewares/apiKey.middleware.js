@@ -28,7 +28,7 @@ export const requireWriteApiKey = (req, res, next) => {
       success: false,
       error: {
         code: 'UNAUTHORIZED',
-        message: 'Se requiere una API key válida para modificar productos.',
+        message: 'Se requiere una API key válida para acceder a este recurso protegido.',
       },
     });
   }

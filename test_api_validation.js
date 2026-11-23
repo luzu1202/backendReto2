@@ -4,17 +4,25 @@ import express from 'express';
 import { once } from 'node:events';
 import Database from './models/database/Database.js';
 import { errorHandlerMiddleware } from './middlewares/errorHandler.middleware.js';
+import { sanitizeMiddleware } from './middlewares/sanitize.middleware.js';
 import apiRouter from './routes/index.js';
 import {
   validateCreateProducto,
   validatePatchProducto,
 } from './middlewares/validation.middleware.js';
+import {
+  validateCreateRol,
+  validateCreateUsuario,
+  validateCreateUsuarioRol,
+  validatePatchUsuario,
+} from './middlewares/accountValidation.middleware.js';
 
 const testApiKey = 'test-api-key-for-backend-tests-32chars';
 process.env.API_WRITE_KEY = testApiKey;
 
 const app = express();
 app.use(express.json());
+app.use(sanitizeMiddleware);
 app.use('/api/v1', apiRouter);
 
 let server;
@@ -112,6 +120,64 @@ test('patch validation rejects unknown fields', () => {
   assert.equal(result.responseBody.error.code, 'VALIDATION_FAILED');
 });
 
+test('user validation enforces valid email and strong passwords', () => {
+  const invalid = runValidation(validateCreateUsuario, {
+    nombre: 'Usuario',
+    email: 'not-an-email',
+    password: 'short',
+  });
+  const invalidActive = runValidation(validateCreateUsuario, {
+    nombre: 'Usuario',
+    email: 'user@example.com',
+    password: 'SafePassword123!',
+    activo: 'false',
+  });
+  const valid = runValidation(validateCreateUsuario, {
+    nombre: 'Usuario',
+    email: 'user@example.com',
+    password: 'Safe<Password>&123',
+  });
+
+  assert.equal(invalid.statusCode, 422);
+  assert.equal(invalid.nextCalled, false);
+  assert.equal(invalidActive.statusCode, 422);
+  assert.equal(valid.nextCalled, true);
+  assert.equal(valid.responseBody, undefined);
+});
+
+test('sanitizer preserves password input as an opaque value', () => {
+  const password = 'Keep<these>&characters';
+  const req = { body: { nombre: '<Usuario>', password } };
+
+  sanitizeMiddleware(req, {}, () => {});
+
+  assert.equal(req.body.password, password);
+  assert.equal(req.body.nombre, 'Usuario');
+});
+
+test('role and assignment validation rejects unknown fields and invalid IDs', () => {
+  const invalidRole = runValidation(validateCreateRol, { nombre: 'ADMIN', admin: true });
+  const invalidDescription = runValidation(validateCreateRol, {
+    nombre: 'ADMIN',
+    descripcion: 42,
+  });
+  const invalidAssignment = runValidation(validateCreateUsuarioRol, {
+    usuarioId: 0,
+    rolId: 'not-an-id',
+  });
+
+  assert.equal(invalidRole.statusCode, 422);
+  assert.equal(invalidDescription.statusCode, 422);
+  assert.equal(invalidAssignment.statusCode, 422);
+});
+
+test('user PATCH validation rejects empty updates', () => {
+  const result = runValidation(validatePatchUsuario, {});
+
+  assert.equal(result.statusCode, 422);
+  assert.equal(result.nextCalled, false);
+});
+
 test('error handler hides internal server messages in production', () => {
   const previousNodeEnv = process.env.NODE_ENV;
   const originalConsoleError = console.error;
@@ -189,6 +255,29 @@ test('all product mutations require a write key', async () => {
   }
 });
 
+test('user and role APIs require a write key for reads and writes', async () => {
+  const protectedRequests = [
+    { method: 'GET', path: '/usuarios' },
+    { method: 'GET', path: '/roles' },
+    { method: 'GET', path: '/usuarios-roles' },
+    { method: 'POST', path: '/usuarios' },
+    { method: 'POST', path: '/roles' },
+    { method: 'POST', path: '/usuarios-roles' },
+  ];
+
+  for (const { method, path } of protectedRequests) {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: method === 'GET' ? undefined : '{}',
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 401, `${method} ${path}`);
+    assert.equal(body.error.code, 'UNAUTHORIZED', `${method} ${path}`);
+  }
+});
+
 test('product API rejects an invalid write key', async () => {
   const response = await fetch(`${apiBaseUrl}/productos`, {
     method: 'POST',
@@ -204,7 +293,7 @@ test('product API rejects an invalid write key', async () => {
   assert.equal(body.error.code, 'UNAUTHORIZED');
 });
 
-test('product API refuses writes when the key is missing or weak', async () => {
+test('protected API refuses requests when the key is missing or weak', async () => {
   const previousKey = process.env.API_WRITE_KEY;
 
   try {
@@ -215,7 +304,7 @@ test('product API refuses writes when the key is missing or weak', async () => {
         process.env.API_WRITE_KEY = key;
       }
 
-      const response = await fetch(`${apiBaseUrl}/productos`, {
+      const response = await fetch(`${apiBaseUrl}/usuarios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
@@ -266,6 +355,194 @@ test('product API supports create, read, update, patch, search, and delete', {
         pvp: 12.5,
         stock: 2,
       }),
+    });
+
+    test('seed creates the default ADMIN and USUARIO roles', {
+      skip: !process.env.TEST_DATABASE_URL,
+    }, async () => {
+      const roles = await Database.getInstance().client.rol.findMany({
+        where: { nombre: { in: ['ADMIN', 'USUARIO'] } },
+        select: { nombre: true },
+      });
+
+      assert.deepEqual(
+        roles.map(({ nombre }) => nombre).sort(),
+        ['ADMIN', 'USUARIO'],
+      );
+    });
+
+    test('user, role, and assignment APIs persist safely and support CRUD', {
+      skip: !process.env.TEST_DATABASE_URL,
+    }, async () => {
+      const suffix = Date.now();
+      const password = `Safe<Password>&${suffix}`;
+      const email = `user-${suffix}@example.com`;
+      let userId;
+      let roleId;
+      let roleName = `TEST_${suffix}`;
+      const authHeaders = { Authorization: `Bearer ${testApiKey}` };
+
+      try {
+        const roleResponse = await fetch(`${apiBaseUrl}/roles`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre: roleName, descripcion: 'Rol temporal de pruebas' }),
+        });
+        const createdRole = await roleResponse.json();
+        assert.equal(roleResponse.status, 201);
+        roleId = createdRole.data.id;
+
+        const duplicateRoleResponse = await fetch(`${apiBaseUrl}/roles`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre: roleName }),
+        });
+        assert.equal(duplicateRoleResponse.status, 409);
+
+        const userResponse = await fetch(`${apiBaseUrl}/usuarios`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: 'Usuario de prueba',
+            email,
+            password,
+          }),
+        });
+        const createdUser = await userResponse.json();
+        assert.equal(userResponse.status, 201);
+        userId = createdUser.data.id;
+        assert.equal(createdUser.data.email, email);
+        assert.equal(createdUser.data.password, undefined);
+        assert.equal(createdUser.data.passwordHash, undefined);
+
+        const userLookup = await fetch(`${apiBaseUrl}/usuarios/${userId}`, {
+          headers: authHeaders,
+        });
+        const userDetails = await userLookup.json();
+        assert.equal(userLookup.status, 200);
+        assert.equal(userDetails.data.passwordHash, undefined);
+
+        const userListResponse = await fetch(
+          `${apiBaseUrl}/usuarios?search=${encodeURIComponent(email)}`,
+          { headers: authHeaders },
+        );
+        const userList = await userListResponse.json();
+        assert.equal(userListResponse.status, 200);
+        assert.ok(userList.data.some((user) => user.id === userId));
+        assert.equal(userList.data[0].passwordHash, undefined);
+
+        const persistedUser = await Database.getInstance().client.usuario.findUnique({
+          where: { id: userId },
+        });
+        assert.match(persistedUser.passwordHash, /^scrypt\$/);
+        assert.notEqual(persistedUser.passwordHash, password);
+
+        const duplicateUserResponse = await fetch(`${apiBaseUrl}/usuarios`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: 'Otro usuario',
+            email,
+            password,
+          }),
+        });
+        assert.equal(duplicateUserResponse.status, 409);
+
+        const assignmentResponse = await fetch(`${apiBaseUrl}/usuarios-roles`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuarioId: userId, rolId }),
+        });
+        const createdAssignment = await assignmentResponse.json();
+        assert.equal(assignmentResponse.status, 201);
+        assert.equal(createdAssignment.data.usuario.id, userId);
+        assert.equal(createdAssignment.data.rol.id, roleId);
+        assert.equal(createdAssignment.data.usuario.passwordHash, undefined);
+
+        const duplicateAssignmentResponse = await fetch(`${apiBaseUrl}/usuarios-roles`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuarioId: userId, rolId }),
+        });
+        assert.equal(duplicateAssignmentResponse.status, 409);
+
+        const assignmentListResponse = await fetch(
+          `${apiBaseUrl}/usuarios-roles?usuarioId=${userId}&rolId=${roleId}`,
+          { headers: authHeaders },
+        );
+        const assignmentList = await assignmentListResponse.json();
+        assert.equal(assignmentListResponse.status, 200);
+        assert.equal(assignmentList.pagination.totalItems, 1);
+        assert.equal(assignmentList.data[0].usuario.passwordHash, undefined);
+
+        const removeAssignmentResponse = await fetch(
+          `${apiBaseUrl}/usuarios-roles/${userId}/${roleId}`,
+          { method: 'DELETE', headers: authHeaders },
+        );
+        assert.equal(removeAssignmentResponse.status, 204);
+
+        const reassignResponse = await fetch(`${apiBaseUrl}/usuarios-roles`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuarioId: userId, rolId }),
+        });
+        assert.equal(reassignResponse.status, 201);
+
+        const userUpdateResponse = await fetch(`${apiBaseUrl}/usuarios/${userId}`, {
+          method: 'PATCH',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ activo: false, password: `Changed<Password>&${suffix}` }),
+        });
+        const updatedUser = await userUpdateResponse.json();
+        assert.equal(userUpdateResponse.status, 200);
+        assert.equal(updatedUser.data.activo, false);
+        assert.equal(updatedUser.data.passwordHash, undefined);
+
+        const updatedPersistedUser = await Database.getInstance().client.usuario.findUnique({
+          where: { id: userId },
+        });
+        assert.notEqual(updatedPersistedUser.passwordHash, persistedUser.passwordHash);
+
+        const roleUpdateResponse = await fetch(`${apiBaseUrl}/roles/${roleId}`, {
+          method: 'PATCH',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ descripcion: 'Descripción actualizada' }),
+        });
+        const updatedRole = await roleUpdateResponse.json();
+        assert.equal(roleUpdateResponse.status, 200);
+        assert.equal(updatedRole.data.descripcion, 'Descripción actualizada');
+
+        const assignmentLookup = await fetch(`${apiBaseUrl}/usuarios-roles/${userId}/${roleId}`, {
+          headers: authHeaders,
+        });
+        assert.equal(assignmentLookup.status, 200);
+
+        const deleteUserResponse = await fetch(`${apiBaseUrl}/usuarios/${userId}`, {
+          method: 'DELETE',
+          headers: authHeaders,
+        });
+        assert.equal(deleteUserResponse.status, 204);
+        userId = undefined;
+
+        const deletedAssignment = await fetch(`${apiBaseUrl}/usuarios-roles/${createdUser.data.id}/${roleId}`, {
+          headers: authHeaders,
+        });
+        assert.equal(deletedAssignment.status, 404);
+
+        const deleteRoleResponse = await fetch(`${apiBaseUrl}/roles/${roleId}`, {
+          method: 'DELETE',
+          headers: authHeaders,
+        });
+        assert.equal(deleteRoleResponse.status, 204);
+        roleId = undefined;
+      } finally {
+        if (userId) {
+          await fetch(`${apiBaseUrl}/usuarios/${userId}`, { method: 'DELETE', headers: authHeaders });
+        }
+        if (roleId) {
+          await fetch(`${apiBaseUrl}/roles/${roleId}`, { method: 'DELETE', headers: authHeaders });
+        }
+      }
     });
     const created = await createResponse.json();
     assert.equal(createResponse.status, 201);

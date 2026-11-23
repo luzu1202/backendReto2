@@ -14,17 +14,18 @@ const sanitizeString = (str) => {
 /**
  * Sanitiza recursivamente cualquier objeto o valor
  */
-const deepSanitize = (obj) => {
+const deepSanitize = (obj, key) => {
+  if (key === 'password') return obj;
   if (typeof obj === 'string') {
     return sanitizeString(obj);
   }
   if (Array.isArray(obj)) {
-    return obj.map(deepSanitize);
+    return obj.map((value) => deepSanitize(value));
   }
   if (obj !== null && typeof obj === 'object') {
     const sanitizedObj = {};
     for (const [key, value] of Object.entries(obj)) {
-      sanitizedObj[key] = deepSanitize(value);
+      sanitizedObj[key] = deepSanitize(value, key);
     }
     return sanitizedObj;
   }
